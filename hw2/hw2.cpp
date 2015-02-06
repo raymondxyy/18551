@@ -31,7 +31,7 @@ using namespace std;
 
 /* Function prototypes */
 void DisplayMat(Mat MatDisp);
-void path_to_data(string p, vector<Mat>* data);
+vector<Mat>* path_to_data(string p);
 
 
 
@@ -53,9 +53,12 @@ int main()
     
     /* STAGE 2: input processing (if any) */
     string p = "./Train_Files/";
-    path_to_data(p, train);
-#if DEBUG    
-    printf ("train has size %d",(train->size));
+    train = path_to_data(p);
+#if DEBUG
+    if (train != NULL)
+        printf ("train has size %lu\n",train->size());
+    else
+        printf("error!\n");
 #endif
 	/* STAGE 3: actual processing */
     /* STAGE 4: output processing (if any) */
@@ -110,7 +113,7 @@ void IPCAtest(char *imgName)
 
 /* find the paths of all the files in p, 
    and construct dst from all images in p */
-void path_to_data(string p, vector<Mat>* data, int* s){
+vector<Mat>* path_to_data(string p){
 	DIR* dir = NULL;
 	struct dirent *entry = NULL;
     string* paths = new string[MAXLEN];
@@ -123,12 +126,17 @@ void path_to_data(string p, vector<Mat>* data, int* s){
                 size += 1;
             }
         }
+#if DEBUG
+        printf("size:%d\n",size);
+#endif
+        vector<Mat>* data = new vector<Mat>(size);
         for (int i = 0; i < size; i++){
             data->push_back(imread(paths[i]));
         }
 		closedir(dir);
-        return;
+        return data;
 	}
+    return NULL;
 }
 
 /* brought from Sample_Code.cpp */
