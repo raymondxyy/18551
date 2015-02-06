@@ -1,14 +1,43 @@
-/*** 18551 Homework 2 Starter Code ******/
+/*
+    Course: 18551 Digital Communication and Signal Processing
+    Homework 2: Face Recognition
+    Authors: Lucas Crandall, Raymond Xia
+    Due date: February 9, 2015
 
-// Please add your own comments to the code before you submit 
+    usage: hw2 train-path test-path outfile
+        train-path : path of training files relative to hw2.cpp
+        test-path  : path of test files relative to hw2.cpp
+        outfile    : [file name].txt containing training result
+*/
 
 #include <iostream>
 #include <opencv.hpp>
 #include <string>
 #include <fstream>
+#include <stdio.h>
+#include <vector>
+#include <dirent.h>
 
 using namespace cv;
+using namespace std;
 
+/* Macros */
+#define READING "r"
+#define WRITING "w"
+#define MAXLEN 40
+
+/* Enable when debugging */
+#define DEBUG (1)
+
+/* Function prototypes */
+void DisplayMat(Mat MatDisp);
+void path_to_data(string p, vector<Mat>* data);
+
+
+
+/* define program argument list, excluding flags */
+enum {ARG_PROG, ARG_TRAINPATH, ARG_TESTPATH, ARG_OUTFILE, ARG_NARGS};
+        
 int main()
 {
 
@@ -16,9 +45,32 @@ int main()
 
 	// Call IPCAtest using a test function and see if it returns the correct class label
 
-	// We will be testing on our own set of test images after you submit the code
+	/* STAGE 1: variable initialization */
+    int error = 0;
+    vector<Mat>* train = NULL;
+    int train_size = 0;
+    
+    
+    /* STAGE 2: input processing (if any) */
+    string p = "./Train_Files/";
+    path_to_data(p, train);
+#if DEBUG    
+    printf ("train has size %d",(train->size));
+#endif
+	/* STAGE 3: actual processing */
+    /* STAGE 4: output processing (if any) */
 
-	return 0;
+
+
+	/* STAGE 5: cleanup and quit */
+exit:
+    printf("hw2 quitting...\n");
+    /* close any file descripter */
+    
+    /* free any occupied memory */
+    if (train != NULL)
+        train->clear();
+	return error;
 }
 void IPCAtrain(char* trainFolderPath, int numTrain)
 {
@@ -41,7 +93,7 @@ void IPCAtrain(char* trainFolderPath, int numTrain)
 
 }
 
-int IPCAtest(char *imgName)
+void IPCAtest(char *imgName)
 {
 	/* imgName is the path and filename of the test image */
 
@@ -54,5 +106,37 @@ int IPCAtest(char *imgName)
 
 	// return the class label corresponding to the eigen space which showed minimum reconstruction error 
 
+}
 
+/* find the paths of all the files in p, 
+   and construct dst from all images in p */
+void path_to_data(string p, vector<Mat>* data, int* s){
+	DIR* dir = NULL;
+	struct dirent *entry = NULL;
+    string* paths = new string[MAXLEN];
+    int size = 0;
+    if((dir = opendir(p.c_str())) != NULL){
+        while((entry = readdir(dir)) != NULL){
+            if( strcmp(entry->d_name, ".") != 0 
+                    && strcmp(entry->d_name, "..") != 0){
+                paths[size] = p + string(entry->d_name);
+                size += 1;
+            }
+        }
+        for (int i = 0; i < size; i++){
+            data->push_back(imread(paths[i]));
+        }
+		closedir(dir);
+        return;
+	}
+}
+
+/* brought from Sample_Code.cpp */
+void DisplayMat(Mat MatDisp){
+	for (int i = 0; i < MatDisp.rows; i++){
+		for (int j = 0; j < MatDisp.cols; j++){
+			printf("%f ",MatDisp.at<float>(i,j));
+		}
+		printf("\n");
+	}
 }
