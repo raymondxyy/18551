@@ -131,7 +131,7 @@ vector<Mat>* path_to_data(string p){
 #endif
         vector<Mat>* data = new vector<Mat>(size);
         for (int i = 0; i < size; i++){
-            data->push_back(imread(paths[i]));
+            data->at(i) = imread(paths[i]);
         }
 		closedir(dir);
         return data;
