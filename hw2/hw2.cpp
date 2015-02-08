@@ -42,6 +42,7 @@ typedef struct image_source imsrc;
 #define WRITING "w"
 #define MAXLEN 40
 #define CLASS_POS 6
+#define EIGENSIZE 16385
 
 /* Enable when debugging */
 #define DEBUG (1)
@@ -185,20 +186,27 @@ void IPCAtrain(char* trainFolderPath, int numTrain)
 {
 	/* trainFolderPath is the path to the folder containing the training images
 	   numTrain is the number of training images per class */
-
-	// Run a loop to iterate over classes (people)
-	for(;;)
-	{
-		//Run a loop to iterate over images of same person and generate the data matrix for the class 
-		//i.e. a matrix in which each column is a vectorized version of the face matrix under consideration
-
-		// Subtract the mean vector from each vector of the data matrix
-
-		// Compute the covariance matrix and generate the eigen vectors using the Gram trick
-		
-		// Store the eigen vectors and the mean vector in a file, which will be accessed by the IPCAtest function
-	
-	}
+  
+  int data_size = images->data->size();
+  
+  if((data_size % images->num_per_class) != 0){
+      return null;
+  }
+  int num_classes = data_size / images->num_num_per_class;
+  vector<Mat>* data_mat = (num_classes, Mat(EIGENSIZE,images->num_train,CV_32FC1));
+  vector<Mat>& covar_mat = (num_classes, Mat(EIGENSIZE,EIGENSIZE,CV_32FC1));
+			
+  // Run a loop to iterate over classes (people)
+  for(int i = 0; i < num_classes; i++){
+    //Run a loop to iterate over images of same person and generate the data matrix for the class
+    //i.e. a matrix in which each column is a vectorized version of the face matrix under consideration
+    for(int j = 0; j < images->num_per_class; j++){
+      data_mat->at(i)->row(j) = images->data[(i * num_classes)+j]->reshape(1,1);
+    }
+    calcCovarMatrix(data_mat->at(i),images->num_per_class, covar_mat->at(i), output->at(i)->mean, CV_COVAR_NORMAL | CV_COVAR_COLS, CV_32FC1);
+    eigen(covar_mat->at(i),1,output->at(i)->eigvec,output->at(i)->eigval);
+    output->at(i)->label = i;
+  }
 
 }
 
