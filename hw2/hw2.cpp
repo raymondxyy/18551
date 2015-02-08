@@ -215,11 +215,12 @@ void IPCAtrain(imsrc* images, vector<pc>* output)
       return;
   }
   int num_classes = data_size / images->num_per_class;
-  vector<Mat*> data_matp;
+  vector<Mat> data_mat;
   vector<Mat> covar_mat;
+  vector<Mat> mean_mat;
   for (int i = 0; i < num_classes; i++){
-      Mat temp = Mat(EIGENSIZE,images->num_per_class,CV_32FC1);
-      data_matp.push_back(&temp);
+    mean_mat.push_back(Mat::zeros(EIGENSIZE,1,CV_32FC1));
+      data_matp.push_back(Mat(EIGENSIZE,images->num_per_class,CV_32FC1));
       covar_mat.push_back(Mat(EIGENSIZE,EIGENSIZE,CV_32FC1));
   }
 			
@@ -228,10 +229,18 @@ void IPCAtrain(imsrc* images, vector<pc>* output)
     //Run a loop to iterate over images of same person and generate the data matrix for the class
     //i.e. a matrix in which each column is a vectorized version of the face matrix under consideration
     for(int j = 0; j < images->num_per_class; j++){
-      data_matp[i]->row(j) = images->data->at((i * num_classes)+j).reshape(1,EIGENSIZE);
+      data_mat[i].row(j) = images->data->at((i * num_classes)+j).\
+	reshape(1,EIGENSIZE);
+      mean_mat[i] = mean_mat[i]+(data_mat[i].row(j)/images->num_per_class);
     }
-    calcCovarMatrix(data_matp[i],images->num_per_class, covar_mat[i], 
-        output->at(i).mean, CV_COVAR_NORMAL | CV_COVAR_COLS, CV_32FC1);
+    /* calcCovarMatrix(data_matp[i],images->num_per_class, covar_mat[i], 
+       output->at(i).mean, CV_COVAR_NORMAL | CV_COVAR_COLS, CV_32FC1);*/
+    for(int k = 0; k < images->num_per_class; k++){
+      data_mat[i].row(j) = data_mat[i].row(j) - mean_mat[i];
+    }
+    Mat temp_transpose;
+    transpose(data_mat[i],temp_transpose);
+    covar_mat[i] = data_mat[i]*temp_transpose;
     eigen(covar_mat[i],1,output->at(i).eigvec,output->at(i).eigval);
     output->at(i).label = i;
   }
