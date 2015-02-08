@@ -28,9 +28,9 @@ struct image_source{
 };
 
 struct pc{
-    Mat& eigvec;
-    Mat& eigval;
-    Mat& mean;
+    Mat eigvec;
+    Mat eigval;
+    Mat mean;
     int label;
 };
 
@@ -42,12 +42,14 @@ typedef struct image_source imsrc;
 #define WRITING "w"
 #define MAXLEN 40
 #define CLASS_POS 6
-#define EIGENSIZE 16385
+#define NUM_CLASS 4
+#define EIGENSIZE 16384
 
 /* Enable when debugging */
 #define DEBUG (1)
 
 /* Function prototypes */
+void IPCAtrain(imsrc* images, vector<pc>* output);
 void DisplayMat(Mat MatDisp);
 void path_to_data(string p, imsrc* dst);
 
@@ -69,13 +71,17 @@ int main(int argc, char* argv[])
     imsrc* trainp = NULL;
     imsrc test = {NULL,0};
     imsrc* testp = NULL;
-    vector<pc>* trained = NULL;
+    vector<pc> trained;
+    vector<pc>* trainedp = NULL;
     string train_path = "";
     string test_path = "";
     int error = 0;
     int train_flag = 0;
     int test_flag = 0;
-    
+    Mat train_eigval = Mat(EIGENSIZE,EIGENSIZE,CV_32FC1);
+    Mat train_eigvec = Mat(EIGENSIZE,EIGENSIZE,CV_32FC1);
+    Mat train_mean = Mat(EIGENSIZE,1,CV_32FC1);
+    pc component = {train_eigvec,train_eigval,train_mean,0};
     
     /* STAGE 2: input processing (if any) */
     printf("hw2: train data from [train-path] and test data from [test-path].\n");
@@ -163,7 +169,14 @@ int main(int argc, char* argv[])
 #endif
     
 	/* STAGE 3: actual processing */
-    //trained = IPCAtrain(tain);
+    //Mat train_eigval, train_eigvec, train_mean;
+    for (int i = 0; i < NUM_CLASS; i++){
+        //pc component = {train_eigvec,train_eigval,train_mean,0};
+        trained.push_back(component);
+    }
+    //trained = (NUM_CLASS,{train_eigvec,train_eigval,train_mean,0});
+    trainedp = &trained;
+    IPCAtrain(trainp, trainedp);
     
     /* STAGE 4: output processing (if any) */
 
@@ -180,9 +193,17 @@ exit:
         trainp->data->clear();
     if ((testp != NULL) && (testp->data != NULL))
         testp->data->clear();
+    if (trainedp != NULL) {
+        for (int i = 0; i < trainedp->size(); i++){
+            trainedp->at(i).eigvec.release();
+            trainedp->at(i).eigval.release();
+            trainedp->at(i).mean.release();
+        }
+    }
 	return error;
 }
-void IPCAtrain(char* trainFolderPath, int numTrain)
+
+void IPCAtrain(imsrc* images, vector<pc>* output)
 {
 	/* trainFolderPath is the path to the folder containing the training images
 	   numTrain is the number of training images per class */
@@ -190,22 +211,29 @@ void IPCAtrain(char* trainFolderPath, int numTrain)
   int data_size = images->data->size();
   
   if((data_size % images->num_per_class) != 0){
-      return null;
+      output = NULL;
+      return;
   }
-  int num_classes = data_size / images->num_num_per_class;
-  vector<Mat>* data_mat = (num_classes, Mat(EIGENSIZE,images->num_train,CV_32FC1));
-  vector<Mat>& covar_mat = (num_classes, Mat(EIGENSIZE,EIGENSIZE,CV_32FC1));
+  int num_classes = data_size / images->num_per_class;
+  vector<Mat*> data_matp;
+  vector<Mat> covar_mat;
+  for (int i = 0; i < num_classes; i++){
+      Mat temp = Mat(EIGENSIZE,images->num_per_class,CV_32FC1);
+      data_matp.push_back(&temp);
+      covar_mat.push_back(Mat(EIGENSIZE,EIGENSIZE,CV_32FC1));
+  }
 			
   // Run a loop to iterate over classes (people)
   for(int i = 0; i < num_classes; i++){
     //Run a loop to iterate over images of same person and generate the data matrix for the class
     //i.e. a matrix in which each column is a vectorized version of the face matrix under consideration
     for(int j = 0; j < images->num_per_class; j++){
-      data_mat->at(i)->row(j) = images->data[(i * num_classes)+j]->reshape(1,1);
+      data_matp[i]->row(j) = images->data->at((i * num_classes)+j).reshape(1,EIGENSIZE);
     }
-    calcCovarMatrix(data_mat->at(i),images->num_per_class, covar_mat->at(i), output->at(i)->mean, CV_COVAR_NORMAL | CV_COVAR_COLS, CV_32FC1);
-    eigen(covar_mat->at(i),1,output->at(i)->eigvec,output->at(i)->eigval);
-    output->at(i)->label = i;
+    calcCovarMatrix(data_matp[i],images->num_per_class, covar_mat[i], 
+        output->at(i).mean, CV_COVAR_NORMAL | CV_COVAR_COLS, CV_32FC1);
+    eigen(covar_mat[i],1,output->at(i).eigvec,output->at(i).eigval);
+    output->at(i).label = i;
   }
 
 }
