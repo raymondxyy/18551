@@ -14,7 +14,9 @@
 #include <opencv.hpp>
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <stdio.h>
+#include <stdlib.h>
 #include <vector>
 #include <dirent.h>
 
@@ -29,7 +31,6 @@ struct image_source{
 
 struct pc{
     Mat eigvec;
-    Mat eigval;
     Mat mean;
     int label;
 };
@@ -44,15 +45,17 @@ typedef struct image_source imsrc;
 #define CLASS_POS 6
 #define NUM_CLASS 4
 #define EIGENSIZE 16384
+#define LINESIZE 1024
 
 /* Enable when debugging */
-#define DEBUG (1)
+#define DEBUG (0)
 
 /* Function prototypes */
 void IPCAtrain(imsrc* images, vector<pc>* output);
-void DisplayMat(Mat MatDisp);
+void IPCAtest(imsrc* images, vector<pc>* trained, vector<int>* testedp);
+void write_file(pc component, FILE* fp);
+void read_file(vector<pc>* trained, char* filename);
 void path_to_data(string p, imsrc* dst);
-
 
 
 /* define program argument list, excluding flags */
@@ -60,11 +63,6 @@ enum {ARG_PROG, ARG_FILE, ARG_NARGS};
         
 int main(int argc, char* argv[])
 {
-
-	// Call IPCAtrain to generate a text file containing eigenvectors and means of each clas
-
-	// Call IPCAtest using a test function and see if it returns the correct class label
-
 	/* STAGE 1: variable initialization */
     FILE* ofp = NULL;
     imsrc train = {NULL,0}; 
@@ -73,21 +71,25 @@ int main(int argc, char* argv[])
     imsrc* testp = NULL;
     vector<pc> trained;
     vector<pc>* trainedp = NULL;
+    vector<int> tested;
+    vector<int>* testedp = NULL;
     string train_path = "";
     string test_path = "";
+    char* mode = NULL;
     int error = 0;
     int train_flag = 0;
     int test_flag = 0;
-    Mat train_eigval = Mat(EIGENSIZE,EIGENSIZE,CV_32FC1);
-    Mat train_eigvec = Mat(EIGENSIZE,EIGENSIZE,CV_32FC1);
-    Mat train_mean = Mat(EIGENSIZE,1,CV_32FC1);
-    pc component = {train_eigvec,train_eigval,train_mean,0};
+    Mat train_eigvec;
+    Mat train_mean;
+    
     
     /* STAGE 2: input processing (if any) */
-    printf("hw2: train data from [train-path] and test data from [test-path].\n");
+    printf("hw2: train data from [train-path]"
+        " and test data from [test-path].\n");
     
     
-	/* one optional flag: -wN */
+    
+	/* two optional flags: -e[test_path] -r[train_path] */
 	if(argc > 1){
 		char flag;
 		while(argv[1][0] == '-'){
@@ -130,56 +132,91 @@ int main(int argc, char* argv[])
 		return 1;
     }
     
-#if DEBUG
-    cout << "train_path = " << train_path << "\n";
-    cout << "test_path = " << test_path << "\n";
-#endif    
+    printf("INPUT PROCESSING...\n");
     
-    ofp = fopen(argv[ARG_FILE],WRITING);
-    if (ofp == NULL){
-		printf("Error: unable to open %s\n", argv[ARG_FILE]);
-		error++;
-		goto exit;
-    }
-    //train_path = "./Train_Files/"; //TODO: get path from command line
+    cout << "\ttrain_path = " << train_path << "\n";
     if (train_flag){
+        ofp = fopen(argv[ARG_FILE],WRITING);
+        if (ofp == NULL){
+		    printf("Error: unable to open %s\n", argv[ARG_FILE]);
+		    error++;
+		    goto exit;
+        }
         trainp = &train;
-         path_to_data(train_path,trainp);
+        path_to_data(train_path,trainp);
     }
-       
-    //test_path = "./Test_Files"; //TODO: get path from command line
+    if (trainp != NULL){
+        printf ("\ttrain has %lu samples total.\n",trainp->data->size());
+        printf("\tEach class has %d samples.\n", trainp->num_per_class);
+    }
+    
+    cout << "\ttest_path = " << test_path << "\n";   
     if (test_flag){
         testp = &test;
         path_to_data(test_path,testp);
     }
-        
-#if DEBUG
-    if (trainp != NULL){
-        printf ("train has %lu samples total.\n",trainp->data->size());
-        printf("Each class has %d samples.\n", trainp->num_per_class);
-    }
     if (testp != NULL){
-        printf ("test has %lu samples total.\n",testp->data->size());
-        printf("Each class has %d samples.\n", testp->num_per_class);
+        printf ("\ttest has %lu samples total.\n",testp->data->size());
+        printf("\tEach class has %d samples.\n", testp->num_per_class);
     }
-    else {
-        printf("error!\n");
+    
+    if ((testp == NULL) && (trainp == NULL)) {
+        printf("\terror!\n");
         goto exit;
     }
-#endif
+    
     
 	/* STAGE 3: actual processing */
-    //Mat train_eigval, train_eigvec, train_mean;
     for (int i = 0; i < NUM_CLASS; i++){
-        //pc component = {train_eigvec,train_eigval,train_mean,0};
+        pc component = {train_eigvec,train_mean,0};
         trained.push_back(component);
     }
-    //trained = (NUM_CLASS,{train_eigvec,train_eigval,train_mean,0});
+    
     trainedp = &trained;
-    IPCAtrain(trainp, trainedp);
+    if (train_flag){ // TRAINING ONLY
+        printf("TRAINING...\n");
+        IPCAtrain(trainp, trainedp);
+    
+        if (trainedp != NULL){
+            printf("\tTraining complete without error.\n");
+        }
+        else{
+            printf("\tError encountered when training.\n");
+            goto exit;
+        }
+    }
+    
+    if (test_flag){ // TESTING
+        printf("TESTING...\n");
+        if (!train_flag){ //TESTING WITHOUT ACTUAL TRAINING
+            printf("\tREADING TRAINING DATA FROM FILE...\n");
+            read_file(trainedp,argv[ARG_FILE]);
+        }
+        testedp = &tested;
+        IPCAtest(testp, trainedp, testedp);
+        if (testedp != NULL){
+            printf("\tTesting complete without error.\n");
+            printf("\tPRINTING RESULT...\n");
+            for (int i = 0; i < testedp->size(); i++){
+                printf("\tSample is classified to Class %d.\n",\
+                testedp->at(i));
+            }
+        }
+        else{
+            printf("\tError encountered when training.\n");
+            goto exit;
+        }
+    }
     
     /* STAGE 4: output processing (if any) */
-
+    printf("OUTPUT PROCESSING...\n");
+    if (train_flag && (trainedp != NULL)){
+        printf("\tWriting trained data to %s...\n",argv[ARG_FILE]);
+        for (int i = 0; i < trainedp->size(); i++){
+            write_file(trainedp->at(i),ofp);
+        }
+    }
+    
 
 
 	/* STAGE 5: cleanup and quit */
@@ -189,77 +226,108 @@ exit:
     if (ofp != NULL)
         fclose(ofp);
     /* free any occupied memory */
-    if ((trainp != NULL) && (trainp->data != NULL))
-        trainp->data->clear();
-    if ((testp != NULL) && (testp->data != NULL))
-        testp->data->clear();
-    if (trainedp != NULL) {
-        for (int i = 0; i < trainedp->size(); i++){
-            trainedp->at(i).eigvec.release();
-            trainedp->at(i).eigval.release();
-            trainedp->at(i).mean.release();
-        }
-    }
+
 	return error;
 }
 
-void IPCAtrain(imsrc* images, vector<pc>* output)
-{
-	/* trainFolderPath is the path to the folder containing the training images
-	   numTrain is the number of training images per class */
+void IPCAtrain(imsrc* images, vector<pc>* output){
+    int data_size = images->data->size();
   
-  int data_size = images->data->size();
-  
-  if((data_size % images->num_per_class) != 0){
-      output = NULL;
-      return;
-  }
-  int num_classes = data_size / images->num_per_class;
-  vector<Mat> data_mat;
-  vector<Mat> covar_mat;
-  vector<Mat> mean_mat;
-  for (int i = 0; i < num_classes; i++){
-    mean_mat.push_back(Mat::zeros(EIGENSIZE,1,CV_32FC1));
-      data_matp.push_back(Mat(EIGENSIZE,images->num_per_class,CV_32FC1));
-      covar_mat.push_back(Mat(EIGENSIZE,EIGENSIZE,CV_32FC1));
-  }
+    if((data_size % images->num_per_class) != 0){
+        output = NULL;
+        return;
+    }
+    int num_classes = data_size / images->num_per_class;
+    vector<Mat> data_mat;
+    vector<Mat> mean_mat;
+    for (int i = 0; i < num_classes; i++){
+        data_mat.push_back\
+            (Mat::zeros(EIGENSIZE,images->num_per_class,CV_32FC1));
+    }
 			
-  // Run a loop to iterate over classes (people)
-  for(int i = 0; i < num_classes; i++){
-    //Run a loop to iterate over images of same person and generate the data matrix for the class
-    //i.e. a matrix in which each column is a vectorized version of the face matrix under consideration
-    for(int j = 0; j < images->num_per_class; j++){
-      data_mat[i].row(j) = images->data->at((i * num_classes)+j).\
-	reshape(1,EIGENSIZE);
-      mean_mat[i] = mean_mat[i]+(data_mat[i].row(j)/images->num_per_class);
-    }
-    /* calcCovarMatrix(data_matp[i],images->num_per_class, covar_mat[i], 
-       output->at(i).mean, CV_COVAR_NORMAL | CV_COVAR_COLS, CV_32FC1);*/
-    for(int k = 0; k < images->num_per_class; k++){
-      data_mat[i].row(j) = data_mat[i].row(j) - mean_mat[i];
-    }
-    Mat temp_transpose;
-    transpose(data_mat[i],temp_transpose);
-    covar_mat[i] = data_mat[i]*temp_transpose;
-    eigen(covar_mat[i],1,output->at(i).eigvec,output->at(i).eigval);
-    output->at(i).label = i;
-  }
-
+    // Run a loop to iterate over classes (people)
+    for(int i = 0; i < num_classes; i++){
+        /* Run a loop to iterate over images of same person 
+           and generate the data matrix for the class
+           i.e. a matrix in which each column is a 
+           vectorized version of the face matrix under consideration
+        */
+        for(int j = 0; j < images->num_per_class; j++){
+            int idx = (i * images->num_per_class)+j;
+            Mat temp = images->data->at(idx).reshape(1,EIGENSIZE);
+            temp.copyTo(data_mat[i].col(j));
+        }
+    
+        /* calculate mean */
+        Mat cur_mean = Mat::zeros(EIGENSIZE,1,CV_32FC1);
+        for(int j = 0; j < images->num_per_class; j++){
+            cur_mean += data_mat[i].col(j);
+        }
+        cur_mean /= images->num_per_class;
+    
+        /* subtract mean from each column of X */
+        for(int j = 0; j < images->num_per_class; j++){
+            Mat temp = data_mat[i].col(j) - cur_mean;
+            temp.copyTo(data_mat[i].col(j));
+        }
+    
+        /* calculate eigenvectors using Gram's trick */
+        Mat temp_transpose;
+        transpose(data_mat[i],temp_transpose);
+        Mat covar_mat = temp_transpose*data_mat[i];
+        Mat val, vec;
+        eigen(covar_mat,val,vec);
+        transpose(vec,vec);
+        // keep only 7 biggest eigenvectors
+        vec = vec.colRange(0,images->num_per_class-1); 
+        Mat eigvec = data_mat[i]*vec;
+        /* normalize */
+        for(int j = 0; j < images->num_per_class-1; j++){
+            double cur_norm = norm(eigvec.col(j));
+            eigvec.col(j) /= cur_norm;
+        }
+        output->at(i).eigvec = eigvec;
+        output->at(i).mean = cur_mean;
+        output->at(i).label = i+1;
+    }   
 }
 
-void IPCAtest(char *imgName)
-{
-	/* imgName is the path and filename of the test image */
-
-	// Read the eigen vectors and means for each class from file
-	
-	// Project the input test image onto each eigen space and reconstruct
-
-	// Compute the reconstruction error between the input test image and the reconstructed image
-	// You can use euclidean distance (or any other appropriate distance measure)
-
-	// return the class label corresponding to the eigen space which showed minimum reconstruction error 
-
+void IPCAtest(imsrc* images, vector<pc>* trained, vector<int>* testedp){
+    int num_class = trained->size();
+    int data_size = images->data->size();
+  
+    if((data_size % images->num_per_class) != 0){
+        testedp = NULL;
+        return;
+    }
+    
+    for (int i = 0; i < data_size; i++){
+        Mat current_img = images->data->at(i);
+        Mat flattened;
+        current_img.convertTo(flattened, CV_32FC1);
+        flattened = flattened.reshape(1,EIGENSIZE);
+        double min_norm = -1.0;
+        int min_label = -1;
+        for (int j = 0; j < num_class; j++){
+            pc component = trained->at(j);
+            Mat eigvec_trans;
+            transpose(component.eigvec, eigvec_trans);
+            // projection
+            Mat coeff = eigvec_trans * (flattened-component.mean); 
+            Mat reconstruct = component.eigvec*coeff;
+            reconstruct += component.mean;
+            // find euclidean distance
+            double cur_norm = norm(reconstruct,flattened,NORM_L2);
+            if ((min_norm < 0) || (cur_norm < min_norm)){
+                min_norm = cur_norm;
+                min_label = component.label;
+            }
+#if DEBUG
+            printf("Class %d has norm %f.\n",j+1,cur_norm);
+#endif
+        }
+        testedp->push_back(min_label);
+    }
 }
 
 /* find the paths of all the files in p, 
@@ -280,7 +348,10 @@ void path_to_data(string p, imsrc* dst){
                 paths[size] = p + string(entry->d_name);
                 if (flag && ((!size) || 
                     (paths[size][offset] == paths[size-1][offset]))){
-                    num_per_class++;
+#if DEBUG
+                        cout << "\t" << paths[size] << "\n";
+#endif
+                        num_per_class++;
                 }
                 else
                     flag = 0;
@@ -289,7 +360,7 @@ void path_to_data(string p, imsrc* dst){
         }
         vector<Mat>* d = new vector<Mat>(size);
         for (int i = 0; i < size; i++){
-            d->at(i) = imread(paths[i]);
+            d->at(i) = imread(paths[i],CV_LOAD_IMAGE_GRAYSCALE);
         }
         dst->data = d;
         dst->num_per_class = num_per_class;
@@ -298,12 +369,98 @@ void path_to_data(string p, imsrc* dst){
 	}
 }
 
-/* brought from Sample_Code.cpp */
-void DisplayMat(Mat MatDisp){
-	for (int i = 0; i < MatDisp.rows; i++){
-		for (int j = 0; j < MatDisp.cols; j++){
-			printf("%f ",MatDisp.at<float>(i,j));
+
+void write_file(pc component, FILE* fp){
+    int rows = component.eigvec.rows+component.mean.rows;
+    int cols = component.eigvec.cols+component.mean.cols;
+    fprintf(fp,"CLASS: %d\n",component.label);
+    fprintf(fp,"EIGENVECTORS: %d * %d\n",\
+        component.eigvec.rows,component.eigvec.cols);
+	for (int i = 0; i < component.eigvec.rows; i++){
+		for (int j = 0; j < component.eigvec.cols; j++){
+			fprintf(fp,"%f ",component.eigvec.at<float>(i,j));
 		}
-		printf("\n");
+		fprintf(fp,"\n");
+	}
+    fprintf(fp,"MEAN: %d * %d\n",component.mean.rows,component.mean.cols);
+	for (int i = 0; i < component.mean.rows; i++){
+		for (int j = 0; j < component.mean.cols; j++){
+			fprintf(fp,"%f ",component.mean.at<float>(i,j));
+		}
+		fprintf(fp,"\n");
 	}
 }
+
+void read_file(vector<pc>* trained, char* filename){
+    int flag = 0;
+    int class_label = -1;
+    int eig_row = 0; int eig_col = 0;
+    int mean_row = 0; int mean_col = 0;
+    ifstream infile(filename);
+    while (infile.good()){
+        string line = "";
+        if (!getline( infile,line)) break;
+        if (line[0] == 'C'){
+            stringstream s(line);
+            string dummy;
+            s >> dummy >> class_label;
+            class_label--; // for correct indexing
+            trained->at(class_label).label = class_label+1;
+#if DEBUG
+            printf("\tGet CLASS:%d\n",class_label+1);
+#endif
+            continue;
+        }
+        if (line[0] == 'E'){
+            stringstream s(line);
+            string dummy; char c;
+            s >> dummy >> eig_row >> c >> eig_col;
+            flag = 1;
+#if DEBUG
+            printf("\tGet EIGENVECTORS:%d*%d\n",eig_row,eig_col);
+#endif
+            Mat eig_vec = Mat::zeros(eig_row,eig_col,CV_32FC1);
+            for (int i = 0; i < eig_row; i++){         
+                if (!getline( infile,line)){
+                    printf("Error!\n");
+                    break;
+                }     
+                stringstream s(line);
+                for(int j = 0; j < eig_col; j++){
+                    s >> eig_vec.at<float>(i,j);
+                }
+            } 
+            trained->at(class_label).eigvec = eig_vec;
+            continue;
+        }
+        else if (line[0] == 'M'){
+            stringstream s(line);
+            string dummy; char c;
+            s >> dummy >> mean_row >> c >> mean_col;
+            flag = 2;
+#if DEBUG
+            printf("\tGet MEAN:%d*%d\n",mean_row,mean_col);
+#endif      
+            Mat mean = Mat::zeros(mean_row,mean_col,CV_32FC1);
+            for (int i = 0; i < mean_row; i++){         
+                if (!getline( infile,line)){
+                    printf("Error!\n");
+                    break;
+                }     
+                stringstream s(line);
+                for(int j = 0; j < mean_col; j++){
+                    s >> mean.at<float>(i,j);
+                }
+            } 
+            trained->at(class_label).mean = mean;
+            continue;
+            
+        }
+        else{
+            printf("Error! should not get here!\n");
+        }
+    }
+    if (infile.is_open())
+        infile.close();
+}
+
